@@ -1,2 +1,11 @@
-.env 
-dist
+# Ignore node_modules in both client and server
+client/node_modules/
+server/node_modules/
+
+# Ignore build/dist folders
+client/dist/
+server/dist/
+
+# Ignore environment files
+client/.env
+server/.env
