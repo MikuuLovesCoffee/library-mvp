@@ -1,48 +1,45 @@
+// server/routes/auth.js
 import express from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 const router = express.Router();
 
-// REGISTER
+// Register route
 router.post("/register", async (req, res) => {
+  const { username, password } = req.body;
   try {
-    const { username, email, password } = req.body;
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(400).json({ error: "Username already exists" });
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create user
-    const newUser = new User({ username, email, password: hashedPassword });
-    const savedUser = await newUser.save();
-
-    res.status(201).json({ message: "User created", userId: savedUser._id });
+    const hashed = await bcrypt.hash(password, 10);
+    const newUser = new User({ username, password: hashed });
+    const saved = await newUser.save();
+    res.status(201).json(saved);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// LOGIN
+// Login route
 router.post("/login", async (req, res) => {
+  const { username, password } = req.body;
   try {
-    const { email, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
-    // Find user
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ error: "User not found" });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
-    // Check password
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(400).json({ error: "Invalid password" });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-    // Create JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
+    res.json({
+      _id: user._id,
+      username: user.username,
+      role: user.role,
+      token, // frontend must send this in Authorization header
     });
-
-    res.json({ token, userId: user._id, username: user.username });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

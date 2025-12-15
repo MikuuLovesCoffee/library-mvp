@@ -1,35 +1,34 @@
-import { useEffect, useState } from "react"
-import { getBooks } from "./api/api"
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./auth/AuthContext";
+import Navbar from "./components/Navbar";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Upload from "./pages/Upload";
+import AdminDashboard from "./pages/AdminDashboard";
 
-function App() {
-  const [books, setBooks] = useState([])
-
-  useEffect(() => {
-    getBooks().then(setBooks)
-  }, [])
-
-  return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <h1 className="text-3xl font-bold mb-6">Library</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {books.map(book => (
-          <div key={book._id} className="bg-gray-800 p-4 rounded">
-            <h2 className="text-xl font-semibold">{book.title}</h2>
-            <p className="text-sm text-gray-400">{book.description}</p>
-
-
-            <a
-              href={book.fileUrl}
-              className="inline-block mt-3 text-blue-400 underline"
-            >
-              Download PDF
-            </a>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+function ProtectedRoute({ children }) {
+  const { user } = useAuth();
+  return user ? children : <Navigate to="/login" replace />;
 }
 
-export default App
+function AdminRoute({ children }) {
+  const { user } = useAuth();
+  if (!user || user.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
