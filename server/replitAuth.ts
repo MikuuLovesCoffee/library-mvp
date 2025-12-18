@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
+import MemoryStore from "memorystore";
 
 const getOidcConfig = memoize(
   async () => {
@@ -20,6 +21,24 @@ const getOidcConfig = memoize(
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  
+  // Use memory store for development, PostgreSQL for production
+  if (process.env.NODE_ENV === "development") {
+    const SessionStore = MemoryStore(session);
+    const sessionStore = new SessionStore({ checkPeriod: 86400000 }); // 24 hours
+    return session({
+      secret: process.env.SESSION_SECRET || "dev-secret-key",
+      store: sessionStore,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: false, // Allow non-HTTPS in development
+        maxAge: sessionTtl,
+      },
+    });
+  }
+  
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -65,6 +84,43 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Development mode: skip OpenID authentication
+  if (process.env.NODE_ENV === "development") {
+    passport.serializeUser((user: Express.User, cb) => cb(null, user));
+    passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+
+    // Mock login endpoint for development
+    app.get("/api/login", async (req, res) => {
+      const mockUser = {
+        user: {
+          claims: {
+            sub: "dev-user-123",
+            email: "dev@example.com",
+            first_name: "Dev",
+            last_name: "User",
+            profile_image_url: "https://via.placeholder.com/150",
+            exp: Math.floor(Date.now() / 1000) + 86400,
+          },
+          access_token: "mock-token",
+          refresh_token: "mock-refresh-token",
+          expires_at: Math.floor(Date.now() / 1000) + 86400,
+        },
+      };
+      req.login(mockUser.user, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.redirect("/");
+      });
+    });
+
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.redirect("/");
+      });
+    });
+
+    return; // Skip the rest of OpenID setup
+  }
 
   const config = await getOidcConfig();
 
@@ -129,6 +185,27 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // In development, allow all requests for testing
+  if (process.env.NODE_ENV === "development") {
+    if (!req.user) {
+      // Create a mock user if not authenticated
+      (req as any).user = {
+        claims: {
+          sub: "dev-user-123",
+          email: "dev@example.com",
+          first_name: "Dev",
+          last_name: "User",
+          profile_image_url: "https://via.placeholder.com/150",
+          exp: Math.floor(Date.now() / 1000) + 86400,
+        },
+        access_token: "mock-token",
+        refresh_token: "mock-refresh-token",
+        expires_at: Math.floor(Date.now() / 1000) + 86400,
+      };
+    }
+    return next();
+  }
+
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {

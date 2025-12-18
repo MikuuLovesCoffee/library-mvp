@@ -1,6 +1,12 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
+import dotenv from "dotenv";
+
+// Load environment variables from .env.local in development
+if (process.env.NODE_ENV === "development") {
+  dotenv.config({ path: ".env.local" });
+}
 
 const app = express();
 
@@ -83,14 +89,15 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.NODE_ENV === "development" ? "127.0.0.1" : "0.0.0.0";
   httpServer.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host,
+      reusePort: false,
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`serving on http://${host}:${port}`);
     },
   );
 })();
